@@ -1,0 +1,20 @@
+[Unit]
+Description=AI-Toolbox / scan-photo-archive 静态服务 (8000 混合 http+https, 8080 http, 8443 https)
+Documentation=file:/opt/AI-Toolbox/scan-photo-archive/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/AI-Toolbox/scan-photo-archive
+ExecStart=/usr/bin/node /opt/AI-Toolbox/scan-photo-archive/serve.js
+Restart=always
+RestartSec=3
+User=root
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scan-web
+
+[Install]
+WantedBy=multi-user.target
