@@ -156,6 +156,7 @@
   想给之前录过的设备补拍，直接点清单里的那一行即可。
   <b>「已拍 N 张」是浏览器记的拍摄计数</b>，删掉本地照片不会自动变；手机端点该行的「重置」即可归零。
   桌面 Chrome / Edge 点「选择保存文件夹」后会按文件夹里的真实文件重新校准，之后删照片点「按文件夹校准」就同步了。
+  照片左下角会烧入两行水印：SN：设备号 / 日期：YYYY-MM-DD HH:mm:ss。
   页面需运行在 HTTPS 或 localhost 下，否则摄像头会被拒绝。
 </div>
 
@@ -195,6 +196,13 @@
   /* ---------------- 工具 ---------------- */
 
   const pad = (n) => String(n).padStart(3, '0');
+
+  // 水印里的日期：本地时间，YYYY-MM-DD HH:mm:ss
+  function stampDate(d) {
+    const p2 = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) +
+           ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+  }
 
   function sanitize(s) {
     return String(s)
@@ -547,8 +555,8 @@
   }
 
   function drawStamp(ctx, w, h, serialText) {
-    const timeStr = new Date().toLocaleString('zh-CN', { hour12: false });
-    const lines = [serialText, timeStr];
+    // 两行带标签：设备 SN + 拍摄日期时间，画在左下角
+    const lines = ['SN：' + serialText, '日期：' + stampDate(new Date())];
     const size = Math.max(18, Math.round(w / 38));
     const lineH = Math.round(size * 1.35);
     const x = Math.round(size * 0.7);
