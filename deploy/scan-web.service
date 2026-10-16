@@ -1,0 +1,20 @@
+[Unit]
+Description=Scan & Photo Archive Web Server (8000 mixed http/https, 8080 http, 8443 https)
+Documentation=file:README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/scan-web
+ExecStart=/usr/bin/node /opt/scan-web/serve.js
+Restart=always
+RestartSec=3
+User=root
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scan-web
+
+[Install]
+WantedBy=multi-user.target

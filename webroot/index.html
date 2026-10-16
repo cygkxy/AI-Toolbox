@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>扫码拍照存档</title>
+<style>
+  :root{
+    --bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e6e8ee;
+    --sub:#8b93a7;--accent:#4f8cff;--ok:#35c07a;--danger:#ff5d5d;--warn:#ffb020;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;padding:14px;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    max-width:720px;margin-inline:auto;padding-bottom:28px;
+  }
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+  .title{font-size:16px;font-weight:700}
+  .serial{
+    font-size:13px;padding:6px 12px;border-radius:999px;
+    background:#212633;border:1px solid var(--line);color:var(--sub);
+    max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .serial.set{color:var(--ok);border-color:#1f5b3d;background:#12241b}
+
+  .stage{position:relative;background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+  video{display:block;width:100%;max-height:65vh;object-fit:contain;background:#000}
+  #preview{
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:contain;background:#000;display:none;
+  }
+  #preview.show{display:block}
+
+  .placeholder{
+    position:absolute;inset:0;display:grid;place-items:center;
+    color:#5b6274;font-size:14px;text-align:center;padding:20px;
+  }
+  .scan-frame{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:min(62%,280px);aspect-ratio:1;pointer-events:none;
+  }
+  .scan-frame span{position:absolute;width:26px;height:26px;border:3px solid var(--accent)}
+  .scan-frame .tl{top:0;left:0;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+  .scan-frame .tr{top:0;right:0;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+  .scan-frame .bl{bottom:0;left:0;border-right:0;border-top:0;border-radius:0 0 0 8px}
+  .scan-frame .br{bottom:0;right:0;border-left:0;border-top:0;border-radius:0 0 8px 0}
+
+  .scan-tip{
+    position:absolute;left:0;right:0;bottom:14px;text-align:center;
+    font-size:13px;color:#cfd6e6;text-shadow:0 1px 4px #000;
+  }
+
+  .controls{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  button{
+    flex:1;min-width:120px;cursor:pointer;border:1px solid var(--line);
+    background:#212633;color:var(--text);padding:14px 16px;border-radius:11px;
+    font-size:15px;font-weight:600;transition:.15s;
+  }
+  button:hover:not(:disabled){border-color:var(--accent);background:#27303f}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover:not(:disabled){background:#3f7cf0}
+  button.shutter{background:#fff;color:#111;border-color:#fff}
+  button.ghost{flex:0 0 auto;min-width:auto;padding:14px 18px}
+
+  /* 设备清单 */
+  .panel{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .panel-head{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px;color:var(--sub);
+  }
+  .panel-head b{color:var(--text)}
+  .link{
+    flex:0 0 auto;min-width:auto;background:none;border:0;padding:4px 6px;
+    color:var(--sub);font-size:12px;font-weight:500;text-decoration:underline;cursor:pointer;
+  }
+  .link:hover:not(:disabled){background:none;color:var(--danger);border-color:transparent}
+  .list{max-height:230px;overflow:auto}
+  .row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:11px 12px;border-bottom:1px solid #1e232d;cursor:pointer;font-size:14px;
+  }
+  .row:last-child{border-bottom:0}
+  .row:hover{background:#1d222c}
+  .row.active{background:#12233f;box-shadow:inset 3px 0 0 var(--accent)}
+  .row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .badge{
+    flex:0 0 auto;font-size:12px;color:var(--sub);background:#212633;
+    border:1px solid var(--line);border-radius:999px;padding:2px 9px;
+  }
+  .row.active .badge{color:#cfe0ff;border-color:#2b4a7d;background:#16294a}
+  .row .reset{
+    flex:0 0 auto;min-width:auto;padding:4px 9px;font-size:12px;font-weight:500;
+    background:#212633;border:1px solid var(--line);border-radius:8px;color:var(--sub);
+  }
+  .row .reset:hover:not(:disabled){color:var(--danger);border-color:#5a2b2b;background:#241a1a}
+  .actions{display:flex;gap:6px;flex:0 0 auto;align-items:center}
+  .empty{padding:14px 12px;color:#5b6274;font-size:13px;text-align:center}
+
+  .log{
+    margin-top:14px;font-size:12px;color:var(--sub);line-height:1.75;
+    background:#0d0f14;border:1px solid var(--line);border-radius:11px;
+    padding:10px 12px;max-height:150px;overflow:auto;
+  }
+  .log .ok{color:var(--ok)}
+  .log .err{color:var(--danger)}
+  .log .warn{color:var(--warn)}
+
+  .hint{font-size:12px;color:#6b7280;line-height:1.7;margin-top:10px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="title">📷 扫码拍照存档</div>
+  <div class="serial" id="serialDisplay">未选择设备</div>
+</div>
+
+<div class="stage" id="stage">
+  <video id="video" playsinline autoplay muted></video>
+  <img id="preview" alt="预览">
+  <div class="scan-frame" id="scanFrame" hidden>
+    <span class="tl"></span><span class="tr"></span>
+    <span class="bl"></span><span class="br"></span>
+  </div>
+  <div class="scan-tip" id="scanTip" hidden>将二维码放入框内，识别成功会自动停止</div>
+  <div class="placeholder" id="placeholder">点击下方「开始扫描」识别设备二维码</div>
+</div>
+
+<div class="controls">
+  <button id="btnScan" class="primary">开始扫描</button>
+  <button id="btnCapture" class="shutter" hidden>拍照</button>
+  <button id="btnRetake" class="ghost" hidden>重拍</button>
+  <button id="btnSave" class="primary" hidden>保存</button>
+</div>
+
+<div class="controls" id="dirRow" hidden>
+  <button id="btnDir" class="ghost" style="flex:1">选择保存文件夹（桌面端）</button>
+</div>
+
+<div class="panel">
+  <div class="panel-head">
+    <span>已录入 <b id="statDevices">0</b> 台 · 共 <b id="statShots">0</b> 张</span>
+    <span class="actions">
+      <button id="btnRecalib" class="link" hidden>按文件夹校准</button>
+      <button id="btnClear" class="link">清空清单</button>
+    </span>
+  </div>
+  <div class="list" id="deviceList"></div>
+</div>
+
+<div class="log" id="log"></div>
+<div class="hint">
+  一次只扫一个：点「开始扫描」→ 识别成功会自动停下 → 给这台设备拍任意多张 → 再点「扫下一个设备」扫下一个。
+  想给之前录过的设备补拍，直接点清单里的那一行即可。
+  <b>「已拍 N 张」是浏览器记的拍摄计数</b>，删掉本地照片不会自动变；手机端点该行的「重置」即可归零。
+  桌面 Chrome / Edge 点「选择保存文件夹」后会按文件夹里的真实文件重新校准，之后删照片点「按文件夹校准」就同步了。
+  页面需运行在 HTTPS 或 localhost 下，否则摄像头会被拒绝。
+</div>
+
+<script src="./jsQR.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const video = $('video');
+  const preview = $('preview');
+  const placeholder = $('placeholder');
+  const scanFrame = $('scanFrame');
+  const scanTip = $('scanTip');
+  const logEl = $('log');
+  const deviceListEl = $('deviceList');
+
+  const SCAN_MAX = 720;         // 解码时的最大边长，越小越快
+  const SCAN_INTERVAL = 120;    // 解码节流（毫秒）
+  const LS_DEVICES = 'scan:devices';
+
+  let stream = null;
+  let scanning = false;         // 取景框是否在连续解码
+  let previewing = false;       // 是否正在看拍好的照片
+  let activeSerial = '';        // 当前选中的设备
+  let devices = [];             // 本次已录入的设备号列表
+  let capturedBlob = null;
+  let capturedUrl = '';
+  let scanRAF = null;
+  let lastScanAt = 0;
+  let parentDir = null;         // 仅桌面端
+  let dirIndex = null;          // 选了文件夹后，按真实文件建立的索引 Map<设备号,{files,max}>
+
+  const scanCanvas = document.createElement('canvas');
+  const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+  /* ---------------- 工具 ---------------- */
+
+  const pad = (n) => String(n).padStart(3, '0');
+
+  function sanitize(s) {
+    return String(s)
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 64) || 'UNKNOWN';
+  }
+
+  function log(msg, type) {
+    const d = document.createElement('div');
+    if (type) d.className = type;
+    const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    d.textContent = '[' + t + '] ' + msg;
+    logEl.prepend(d);
+    while (logEl.childElementCount > 80) logEl.lastElementChild.remove();
+  }
+
+  /* ---------------- 设备清单 ---------------- */
+
+  // 计数有两个来源：
+  //   1) 没选保存文件夹（手机端）—— 用 localStorage 里的计数器，代表「这台设备拍过几张」
+  //   2) 选了保存文件夹（桌面端）—— 以文件夹里的真实文件为准，删了照片数字就跟着降
+  function seqCount(serial) {
+    return parseInt(localStorage.getItem('seq:' + serial) || '0', 10) || 0;
+  }
+
+  function setSeqCount(serial, n) {
+    try { localStorage.setItem('seq:' + serial, String(n)); } catch (e) {}
+  }
+
+  // dirIndex 为 null 表示没在文件夹模式；非 null 时以它为准（缺少的条目 = 0 张）
+  function filesCount(serial) {
+    if (dirIndex) {
+      const rec = dirIndex.get(serial);
+      return rec ? rec.files : 0;
+    }
+    return seqCount(serial);
+  }
+
+  // 下一个文件名要用的序号；用最大编号推，保证不覆盖已有文件
+  function nextIndex(serial) {
+    if (dirIndex) {
+      const rec = dirIndex.get(serial);
+      return (rec ? rec.max : 0) + 1;
+    }
+    return seqCount(serial) + 1;
+  }
+
+  function totalShots() {
+    return devices.reduce((n, s) => n + filesCount(s), 0);
+  }
+
+  function loadDevices() {
+    try {
+      const arr = JSON.parse(localStorage.getItem(LS_DEVICES) || '[]');
+      devices = Array.isArray(arr) ? arr.filter((s) => typeof s === 'string' && s) : [];
+    } catch (e) {
+      devices = [];
+    }
+  }
+
+  function saveDevices() {
+    try { localStorage.setItem(LS_DEVICES, JSON.stringify(devices)); } catch (e) {}
+  }
+
+  function renderDevices() {
+    deviceListEl.textContent = '';
+
+    if (!devices.length) {
+      const d = document.createElement('div');
+      d.className = 'empty';
+      d.textContent = '还没有识别到二维码';
+      deviceListEl.appendChild(d);
+    } else {
+      devices.forEach((s) => {
+        const row = document.createElement('div');
+        row.className = 'row' + (s === activeSerial ? ' active' : '');
+        row.dataset.serial = s;
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = s;
+
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = '已拍 ' + filesCount(s) + ' 张';
+
+        const reset = document.createElement('button');
+        reset.className = 'reset';
+        reset.dataset.serial = s;
+        reset.textContent = '重置';
+        reset.title = '把该设备计数归零，下一个文件从 _001 重新开始';
+
+        row.appendChild(name);
+        row.appendChild(badge);
+        row.appendChild(reset);
+        deviceListEl.appendChild(row);
+      });
+    }
+
+    $('statDevices').textContent = devices.length;
+    $('statShots').textContent = totalShots();
+  }
+
+  // 把某台设备的计数归零（下一个文件从 _001 重新开始）
+  function resetDevice(serial) {
+    const had = filesCount(serial);
+    if (!confirm('重置「' + serial + '」的计数？\n\n原计数：' + had + ' 张\n' +
+                 '重置后下一个文件会是 ' + serial + '_001.jpg。\n\n' +
+                 '注意：如果保存文件夹里已经有同名文件，会被覆盖。')) return;
+
+    setSeqCount(serial, 0);
+    if (dirIndex) dirIndex.set(serial, { files: 0, max: 0 });
+    renderDevices();
+    log('已重置「' + serial + '」的计数（原 ' + had + ' 张）', 'warn');
+  }
+
+  // 扫描保存文件夹，按真实文件重建计数
+  async function calibrateFromDirectory() {
+    if (!parentDir) { log('请先选择保存文件夹', 'warn'); return; }
+
+    const index = new Map();
+    try {
+      for await (const entry of parentDir.values()) {
+        if (entry.kind !== 'file') continue;
+        const m = /^(.*)_(\d{1,6})\.jpe?g$/i.exec(entry.name);
+        if (!m) continue;
+        const serial = m[1];
+        const num = parseInt(m[2], 10) || 0;
+        const rec = index.get(serial) || { files: 0, max: 0 };
+        rec.files += 1;
+        if (num > rec.max) rec.max = num;
+        index.set(serial, rec);
+      }
+    } catch (e) {
+      log('读取文件夹失败：' + (e && e.message ? e.message : e), 'err');
+      return;
+    }
+
+    dirIndex = index;
+
+    // 文件夹里有、但清单里没有的设备，补进清单；顺带把两侧计数器对齐
+    const added = [];
+    index.forEach((rec, serial) => {
+      if (!devices.includes(serial)) { devices.push(serial); added.push(serial); }
+      setSeqCount(serial, rec.max);
+    });
+    if (added.length) saveDevices();
+
+    renderDevices();
+    log('已按文件夹校准：' + index.size + ' 台设备、' + totalShots() + ' 个文件', 'ok');
+    if (added.length) log('文件夹里发现 ' + added.length + ' 台清单中没有的设备：' + added.join('、'), 'warn');
+
+    // 中间文件被删过 → 文件数和最大编号对不上，说明一下，免得看着奇怪
+    index.forEach((rec, serial) => {
+      if (rec.max !== rec.files) {
+        log(serial + '：文件夹里有 ' + rec.files + ' 个文件，最大编号 ' + pad(rec.max) +
+            '，下一个会存成 ' + pad(rec.max + 1) + '（不会覆盖）', 'warn');
+      }
+    });
+  }
+
+  function selectDevice(serial, opts) {
+    opts = opts || {};
+    activeSerial = serial;
+
+    // 手动从清单里点选时，暂停扫描，方便用户从容补拍
+    if (opts.pauseScanning) stopScan({ silent: true });
+
+    const sd = $('serialDisplay');
+    sd.textContent = serial || '未选择设备';
+    sd.classList.toggle('set', !!serial);
+
+    renderDevices();
+    updateUI();
+
+    if (!opts.silent) log('当前设备：' + serial, 'ok');
+  }
+
+  function registerDevice(serial, raw) {
+    const isNew = !devices.includes(serial);
+    const shotsBefore = filesCount(serial);
+
+    if (isNew) {
+      devices.push(serial);
+      saveDevices();
+      log('识别成功：' + raw + ' → 新增设备 ' + serial, 'ok');
+    } else {
+      log('已录入过的设备：' + serial + '（当前已有 ' + shotsBefore + ' 张）', 'warn');
+    }
+    return isNew;
+  }
+
+  /* ---------------- 摄像头 ---------------- */
+
+  async function ensureCamera() {
+    if (stream && stream.getTracks().some((t) => t.readyState === 'live')) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      log('当前浏览器不支持摄像头 API', 'err');
+      return false;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      placeholder.style.display = 'none';
+      return true;
+    } catch (e) {
+      let msg = e.message || String(e);
+      if (e.name === 'NotAllowedError') {
+        msg = '摄像头权限被拒绝。请用 HTTPS 打开，并在浏览器设置里允许摄像头。';
+      } else if (e.name === 'NotFoundError') {
+        msg = '没有找到可用摄像头。';
+      } else if (e.name === 'NotReadableError') {
+        msg = '摄像头被其他程序占用。';
+      }
+      log(msg, 'err');
+      return false;
+    }
+  }
+
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+  }
+
+  /* ---------------- 连续扫码 ---------------- */
+
+  async function startScan() {
+    if (!(await ensureCamera())) return;
+
+    hidePreview();
+    scanning = true;
+    scanFrame.hidden = false;
+    scanTip.hidden = false;
+    placeholder.style.display = 'none';
+    if (stream) video.play().catch(() => {});
+    updateUI();
+    log('请将二维码对准取景框，识别成功后会自动停止');
+
+    lastScanAt = 0;
+    if (!scanRAF) scanRAF = requestAnimationFrame(scanTick);
+  }
+
+  function stopScan(opts) {
+    opts = opts || {};
+    scanning = false;
+    if (scanRAF) cancelAnimationFrame(scanRAF);
+    scanRAF = null;
+    scanFrame.hidden = true;
+    scanTip.hidden = true;
+    updateUI();
+    if (!opts.silent) log('已取消扫描');
+  }
+
+  function scanTick(now) {
+    if (!scanning) return;
+    if (now - lastScanAt >= SCAN_INTERVAL && !previewing && video.readyState >= 2) {
+      lastScanAt = now;
+      decodeFrame();
+    }
+    // decodeFrame 里若识别成功会调用 stopScan()，这里要再确认一次，别把循环又续上
+    if (!scanning) return;
+    scanRAF = requestAnimationFrame(scanTick);
+  }
+
+  function decodeFrame() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    if (typeof window.jsQR !== 'function') {
+      log('二维码库未加载，请检查网络', 'err');
+      stopScan({ silent: true });
+      return;
+    }
+
+    const sw = Math.min(vw, SCAN_MAX);
+    const sh = Math.round((vh * sw) / vw);
+    scanCanvas.width = sw;
+    scanCanvas.height = sh;
+    scanCtx.drawImage(video, 0, 0, sw, sh);
+
+    let data;
+    try {
+      data = scanCtx.getImageData(0, 0, sw, sh);
+    } catch (e) {
+      return;
+    }
+
+    const code = window.jsQR(data.data, sw, sh, { inversionAttempts: 'attemptBoth' });
+    if (code && code.data) handleDecoded(code.data);
+  }
+
+  function handleDecoded(text) {
+    const raw = String(text).trim();
+    const serial = sanitize(raw);
+
+    // 一次只扫一个：识别成功立刻停下扫描，接下来可以给这台设备连拍多张
+    stopScan({ silent: true });
+
+    registerDevice(serial, raw);
+    if (navigator.vibrate) navigator.vibrate(60);
+
+    activeSerial = serial;
+    const sd = $('serialDisplay');
+    sd.textContent = serial;
+    sd.classList.add('set');
+    renderDevices();
+    updateUI();
+  }
+
+  /* ---------------- 拍照 ---------------- */
+
+  function capture() {
+    if (previewing || !activeSerial) return;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) { log('画面尚未就绪，请稍后再试', 'warn'); return; }
+
+    stopScan({ silent: true });
+
+    const c = document.createElement('canvas');
+    c.width = vw;
+    c.height = vh;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(video, 0, 0, vw, vh);
+    drawStamp(ctx, vw, vh, activeSerial);
+
+    c.toBlob((blob) => {
+      if (!blob) { log('生成图片失败', 'err'); return; }
+      if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+      capturedBlob = blob;
+      capturedUrl = URL.createObjectURL(blob);
+      preview.src = capturedUrl;
+      preview.classList.add('show');
+      video.pause();
+      previewing = true;
+      updateUI();
+    }, 'image/jpeg', 0.92);
+  }
+
+  function drawStamp(ctx, w, h, serialText) {
+    const timeStr = new Date().toLocaleString('zh-CN', { hour12: false });
+    const lines = [serialText, timeStr];
+    const size = Math.max(18, Math.round(w / 38));
+    const lineH = Math.round(size * 1.35);
+    const x = Math.round(size * 0.7);
+
+    ctx.font = '600 ' + size + 'px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = Math.max(2, Math.round(size / 5));
+
+    for (let i = 0; i < lines.length; i++) {
+      const y = h - Math.round(size * 0.7) - (lines.length - 1 - i) * lineH;
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.strokeText(lines[i], x, y);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(lines[i], x, y);
+    }
+  }
+
+  /* ---------------- 保存 ---------------- */
+
+  async function savePhoto() {
+    if (!capturedBlob || !activeSerial) return;
+    const serial = activeSerial;
+
+    const next = nextIndex(serial);
+    const fileName = serial + '_' + pad(next) + '.jpg';
+
+    try {
+      if (parentDir) {
+        await writeToDirectory(parentDir, fileName, capturedBlob);
+        log('已写入文件夹：' + fileName + '（第 ' + next + ' 张）', 'ok');
+      } else {
+        downloadBlob(capturedBlob, fileName);
+        log('已保存：' + fileName + '（第 ' + next + ' 张，浏览器下载目录 / 系统相册）', 'ok');
+      }
+
+      // 两侧计数器同步推进
+      setSeqCount(serial, next);
+      if (dirIndex) {
+        const rec = dirIndex.get(serial) || { files: 0, max: 0 };
+        rec.files += 1;
+        if (next > rec.max) rec.max = next;
+        dirIndex.set(serial, rec);
+      }
+      backToLive();
+    } catch (e) {
+      log('保存失败：' + (e && e.message ? e.message : e), 'err');
+    }
+  }
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  async function writeToDirectory(dir, name, blob) {
+    const opt = { mode: 'readwrite' };
+    if ((await dir.queryPermission(opt)) !== 'granted') {
+      const res = await dir.requestPermission(opt);
+      if (res !== 'granted') throw new Error('没有写入权限');
+    }
+    const fh = await dir.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+  }
+
+  /* ---------------- 状态切换 ---------------- */
+
+  function hidePreview() {
+    previewing = false;
+    preview.classList.remove('show');
+    preview.removeAttribute('src');
+    if (capturedUrl) { URL.revokeObjectURL(capturedUrl); capturedUrl = ''; }
+    capturedBlob = null;
+  }
+
+  // 回到实时取景。
+  // 刻意不自动恢复扫描：扫完一个码就停下，用户想给这台设备拍几张就拍几张，
+  // 拍完自己点「扫下一个设备」。
+  function backToLive() {
+    hidePreview();
+    if (stream) video.play().catch(() => {});
+    updateUI();
+    renderDevices();
+  }
+
+  function updateUI() {
+    const sd = $('serialDisplay');
+    if (activeSerial) {
+      sd.textContent = activeSerial;
+      sd.classList.add('set');
+    } else {
+      sd.textContent = '未选择设备';
+      sd.classList.remove('set');
+    }
+
+    const scanBtn = $('btnScan');
+    scanBtn.hidden = previewing;
+    if (scanning) scanBtn.textContent = '取消扫描';
+    else scanBtn.textContent = activeSerial ? '扫下一个设备' : '开始扫描';
+
+    const canShoot = !!activeSerial && !previewing;
+    $('btnCapture').hidden = !canShoot;
+    $('btnCapture').disabled = !canShoot;
+
+    $('btnRetake').hidden = !previewing;
+    $('btnSave').hidden = !previewing;
+  }
+
+  /* ---------------- 桌面端目录选择 ---------------- */
+
+  if (window.showDirectoryPicker) {
+    $('dirRow').hidden = false;
+    $('btnDir').addEventListener('click', async () => {
+      try {
+        const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const opt = { mode: 'readwrite' };
+        if ((await dir.queryPermission(opt)) !== 'granted') {
+          const res = await dir.requestPermission(opt);
+          if (res !== 'granted') { log('未获得写入权限', 'err'); return; }
+        }
+        parentDir = dir;
+        $('btnDir').textContent = '保存到：' + dir.name;
+        log('已选择保存文件夹：' + dir.name, 'ok');
+        $('btnRecalib').hidden = false;
+        await calibrateFromDirectory();
+      } catch (e) {
+        if (e && e.name !== 'AbortError') log('选择文件夹失败：' + e.message, 'err');
+      }
+    });
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+
+  $('btnScan').addEventListener('click', () => {
+    if (scanning) stopScan();
+    else startScan();
+  });
+
+  $('btnCapture').addEventListener('click', capture);
+  $('btnRetake').addEventListener('click', backToLive);
+  $('btnSave').addEventListener('click', savePhoto);
+
+  // 点清单里的设备 → 切换当前设备并暂停扫描，方便补拍
+  deviceListEl.addEventListener('click', (e) => {
+    const resetBtn = e.target.closest('.reset');
+    if (resetBtn) { resetDevice(resetBtn.dataset.serial); return; }
+
+    const row = e.target.closest('.row');
+    if (!row || !row.dataset.serial) return;
+    if (row.dataset.serial === activeSerial) return;
+    selectDevice(row.dataset.serial, { pauseScanning: true });
+  });
+
+  $('btnRecalib').addEventListener('click', calibrateFromDirectory);
+
+  $('btnClear').addEventListener('click', () => {
+    if (!devices.length) return;
+    if (!confirm('清空本次录入清单？\n（只清空列表显示，各设备的序号计数会保留，不会覆盖已保存的照片）')) return;
+    devices = [];
+    saveDevices();
+    activeSerial = '';
+    renderDevices();
+    updateUI();
+    log('已清空清单（序号计数保留）', 'warn');
+  });
+
+  // 空格快捷键：可拍照=拍照，预览中=保存
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (!previewing && activeSerial) { e.preventDefault(); capture(); }
+    else if (previewing) { e.preventDefault(); savePhoto(); }
+  });
+
+  window.addEventListener('beforeunload', stopCamera);
+
+  /* ---------------- 启动 ---------------- */
+
+  loadDevices();
+  // 若已有历史清单，默认选中最后一个，方便直接补拍
+  if (devices.length) activeSerial = devices[devices.length - 1];
+
+  renderDevices();
+  updateUI();
+  if (devices.length) log('已载入历史清单：' + devices.length + ' 台设备', 'warn');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 密钥与证书：绝不入库
+key.pem
+cert.pem
+*.pem
+*.crt
+*.key
+
+# 本地版本备份
+*.bak-*
+
+# 杂项
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
