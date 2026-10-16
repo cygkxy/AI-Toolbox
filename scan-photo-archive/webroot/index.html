@@ -98,6 +98,16 @@
   .actions{display:flex;gap:6px;flex:0 0 auto;align-items:center}
   .empty{padding:14px 12px;color:#5b6274;font-size:13px;text-align:center}
 
+  /* 手动录入 SN */
+  .manual{display:flex;gap:10px;margin-top:10px}
+  .manual input{
+    flex:1;min-width:0;background:#0d0f14;border:1px solid var(--line);border-radius:11px;
+    color:var(--text);padding:13px 14px;font-size:15px;font-family:inherit;
+  }
+  .manual input:focus{outline:none;border-color:var(--accent);background:#11141b}
+  .manual input::placeholder{color:#5b6274}
+  .manual button{flex:0 0 auto;min-width:auto;padding:13px 20px}
+
   .log{
     margin-top:14px;font-size:12px;color:var(--sub);line-height:1.75;
     background:#0d0f14;border:1px solid var(--line);border-radius:11px;
@@ -135,6 +145,12 @@
   <button id="btnSave" class="primary" hidden>保存</button>
 </div>
 
+<div class="manual">
+  <input id="manualInput" type="text" placeholder="手动输入设备 SN（扫码枪也可直接扫）"
+         autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+  <button id="btnManual" class="primary">使用</button>
+</div>
+
 <div class="controls" id="dirRow" hidden>
   <button id="btnDir" class="ghost" style="flex:1">选择保存文件夹（桌面端）</button>
 </div>
@@ -153,6 +169,7 @@
 <div class="log" id="log"></div>
 <div class="hint">
   一次只扫一个：点「开始扫描」→ 识别成功会自动停下 → 给这台设备拍任意多张 → 再点「扫下一个设备」扫下一个。
+  二维码破损或设备上没有码时，在输入框里<b>手动输入 SN</b> 后回车即可（USB 扫码枪直接扫也行）。
   想给之前录过的设备补拍，直接点清单里的那一行即可。
   <b>「已拍 N 张」是浏览器记的拍摄计数</b>，删掉本地照片不会自动变；手机端点该行的「重置」即可归零。
   桌面 Chrome / Edge 点「选择保存文件夹」后会按文件夹里的真实文件重新校准，之后删照片点「按文件夹校准」就同步了。
@@ -389,18 +406,29 @@
     if (manual) warmCamera();
   }
 
-  function registerDevice(serial, raw) {
+  function registerDevice(serial, raw, source) {
     const isNew = !devices.includes(serial);
     const shotsBefore = filesCount(serial);
+    const how = source === 'manual' ? '手动录入' : '识别成功';
 
     if (isNew) {
       devices.push(serial);
       saveDevices();
-      log('识别成功：' + raw + ' → 新增设备 ' + serial, 'ok');
+      log(how + '：' + raw + ' → 新增设备 ' + serial, 'ok');
     } else {
       log('已录入过的设备：' + serial + '（当前已有 ' + shotsBefore + ' 张）', 'warn');
     }
     return isNew;
+  }
+
+  // 把某台设备设为「当前设备」，并刷新界面
+  function activateSerial(serial) {
+    activeSerial = serial;
+    const sd = $('serialDisplay');
+    sd.textContent = serial || '未选择设备';
+    sd.classList.toggle('set', !!serial);
+    renderDevices();
+    updateUI();
   }
 
   /* ---------------- 摄像头 ---------------- */
@@ -547,12 +575,30 @@
     registerDevice(serial, raw);
     if (navigator.vibrate) navigator.vibrate(60);
 
-    activeSerial = serial;
-    const sd = $('serialDisplay');
-    sd.textContent = serial;
-    sd.classList.add('set');
-    renderDevices();
-    updateUI();
+    activateSerial(serial);
+  }
+
+  /* ---------------- 手动录入 SN ---------------- */
+
+  function submitManual() {
+    const input = $('manualInput');
+    const raw = String(input.value || '').trim();
+    if (!raw) { log('请先输入设备 SN', 'warn'); input.focus(); return; }
+
+    const serial = sanitize(raw);
+
+    // 手动录入等同于扫到码：退出预览、停下扫描
+    if (previewing) backToLive();
+    stopScan({ silent: true });
+
+    registerDevice(serial, raw, 'manual');
+    if (serial !== raw) {
+      log('SN 含文件名不允许的字符，已处理为：' + serial, 'warn');
+    }
+    if (navigator.vibrate) navigator.vibrate(40);
+
+    activateSerial(serial);
+    input.value = '';
   }
 
   /* ---------------- 拍照 ---------------- */
@@ -768,6 +814,12 @@
   });
 
   $('btnRecalib').addEventListener('click', calibrateFromDirectory);
+
+  // 手动录入 SN：点按钮，或输入框里按回车（USB 扫码枪扫完就是回车）
+  $('btnManual').addEventListener('click', submitManual);
+  $('manualInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); submitManual(); }
+  });
 
   $('btnClear').addEventListener('click', () => {
     if (!devices.length) return;
