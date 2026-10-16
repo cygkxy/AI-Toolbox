@@ -181,6 +181,7 @@
   let stream = null;
   let scanning = false;         // 取景框是否在连续解码
   let previewing = false;       // 是否正在看拍好的照片
+  let capturing = false;        // 正在启动摄像头/生成照片，防重复点击
   let activeSerial = '';        // 当前选中的设备
   let devices = [];             // 本次已录入的设备号列表
   let capturedBlob = null;
@@ -372,7 +373,8 @@
     activeSerial = serial;
 
     // 手动从清单里点选时，暂停扫描，方便用户从容补拍
-    if (opts.pauseScanning) stopScan({ silent: true });
+    const manual = !!opts.pauseScanning;
+    if (manual) stopScan({ silent: true });
 
     const sd = $('serialDisplay');
     sd.textContent = serial || '未选择设备';
@@ -382,6 +384,9 @@
     updateUI();
 
     if (!opts.silent) log('当前设备：' + serial, 'ok');
+
+    // 点了历史设备想直接补拍：顺手把摄像头打开，不然点了「拍照」才发现没画面
+    if (manual) warmCamera();
   }
 
   function registerDevice(serial, raw) {
@@ -437,6 +442,32 @@
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = null;
     video.srcObject = null;
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function hasLiveCamera() {
+    return !!(stream && stream.getTracks().some((t) => t.readyState === 'live'));
+  }
+
+  // 打开摄像头（如果还没开）并等到画面真的有尺寸为止。
+  // 关键：getUserMedia 必须在这一步同步调用，否则 iOS Safari 会因为「非用户手势」拒绝。
+  async function ensureVideoReady() {
+    if (!(await ensureCamera())) return false;
+    for (let i = 0; i < 40 && !(video.videoWidth && video.videoHeight); i++) {
+      await sleep(50);   // 最多等 2 秒
+    }
+    return !!(video.videoWidth && video.videoHeight);
+  }
+
+  // 只开画面、不启动扫码循环（例如从清单里点选历史设备后想直接补拍）
+  async function warmCamera() {
+    const already = hasLiveCamera();
+    if (!(await ensureCamera())) return false;
+    if (stream) video.play().catch(() => {});
+    updateUI();
+    if (!already) log('摄像头已开启，可以拍照了');
+    return true;
   }
 
   /* ---------------- 连续扫码 ---------------- */
@@ -526,32 +557,51 @@
 
   /* ---------------- 拍照 ---------------- */
 
-  function capture() {
-    if (previewing || !activeSerial) return;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) { log('画面尚未就绪，请稍后再试', 'warn'); return; }
+  async function capture() {
+    if (previewing || !activeSerial || capturing) return;
+    capturing = true;
+    try {
+      const hadCamera = hasLiveCamera();
 
-    stopScan({ silent: true });
+      // 手机重开页面时摄像头是关的（历史 SN 来自 localStorage），这里自动补上
+      if (!(await ensureVideoReady())) {
+        log('摄像头启动失败或还没有画面，请再点一次「拍照」', 'warn');
+        return;
+      }
+      if (!hadCamera) await sleep(300);   // 刚开的摄像头等它稳定，避免拍到黑屏
 
-    const c = document.createElement('canvas');
-    c.width = vw;
-    c.height = vh;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(video, 0, 0, vw, vh);
-    drawStamp(ctx, vw, vh, activeSerial);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) { log('画面尚未就绪，请稍后再试', 'warn'); return; }
 
-    c.toBlob((blob) => {
-      if (!blob) { log('生成图片失败', 'err'); return; }
-      if (capturedUrl) URL.revokeObjectURL(capturedUrl);
-      capturedBlob = blob;
-      capturedUrl = URL.createObjectURL(blob);
-      preview.src = capturedUrl;
-      preview.classList.add('show');
-      video.pause();
-      previewing = true;
-      updateUI();
-    }, 'image/jpeg', 0.92);
+      stopScan({ silent: true });
+
+      const c = document.createElement('canvas');
+      c.width = vw;
+      c.height = vh;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(video, 0, 0, vw, vh);
+      drawStamp(ctx, vw, vh, activeSerial);
+
+      await new Promise((resolve) => {
+        c.toBlob((blob) => {
+          if (!blob) { log('生成图片失败', 'err'); resolve(); return; }
+          if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+          capturedBlob = blob;
+          capturedUrl = URL.createObjectURL(blob);
+          preview.src = capturedUrl;
+          preview.classList.add('show');
+          video.pause();
+          previewing = true;
+          updateUI();
+          resolve();
+        }, 'image/jpeg', 0.92);
+      });
+    } catch (e) {
+      log('拍照失败：' + (e && e.message ? e.message : e), 'err');
+    } finally {
+      capturing = false;
+    }
   }
 
   function drawStamp(ctx, w, h, serialText) {
@@ -749,6 +799,10 @@
   renderDevices();
   updateUI();
   if (devices.length) log('已载入历史清单：' + devices.length + ' 台设备', 'warn');
+  if (activeSerial) {
+    // 此时摄像头还没开（手机必须等用户手势），提示一下，别让用户以为坏了
+    placeholder.textContent = '点「拍照」或「扫下一个设备」开启摄像头';
+  }
 })();
 </script>
 </body>
